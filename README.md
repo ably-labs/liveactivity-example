@@ -42,7 +42,7 @@ Both Live Activity flows are covered, end to end:
 ## What's in the repo
 
 ```
-LiveActivityExample/                iOS app (Xcode project)
+ios/                                iOS app (Xcode project)
   LiveActivityExample/              Main app target
     Models/GameAttributes.swift       GameAttributes — the ActivityAttributes wire contract
     Services/LiveActivityManager.swift  ActivityKit: start/end, token observation
@@ -97,7 +97,7 @@ change the dashboard port (default 3000).
 ## Step 3 — Build the iOS app
 
 The Xcode project is included; open
-`LiveActivityExample/LiveActivityExample.xcodeproj`, then:
+`ios/LiveActivityExample.xcodeproj`, then:
 
 1. **Signing & Capabilities** (main app target): set your team, make sure
    **Push Notifications** is added, and `aps-environment` is `development`.
