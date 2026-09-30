@@ -1,16 +1,21 @@
-# Live Activities with Ably
+# Live Activities & Live Updates with Ably
 
-Drive iOS **Live Activities** (Lock Screen + Dynamic Island) from a Node.js
-server using [Ably](https://ably.com). The
-example shows a live NBA game score: a dashboard in the browser pushes score
-updates, and every subscribed iPhone updates in real time.
+Drive iOS **Live Activities** (Lock Screen + Dynamic Island) and Android
+**Live Updates** (promoted ongoing notifications + a home-screen widget) from a
+Node.js server using [Ably](https://ably.com). The example shows a live NBA
+game score: a dashboard in the browser pushes score updates, and every
+subscribed iPhone and Android phone updates in real time.
 
-Ably holds Apple APNs auth key (uploaded once in the Ably dashboard):
+Ably holds the push credentials — the Apple APNs auth key and the Firebase
+service account (both uploaded once in the Ably dashboard):
 
-- the **server** needs only an Ably API key (no `.p8` files, no JWT signing),
-  no direct APNs connections;
-- the **iOS app** authenticates with Ably token auth via the server's
-  `authUrl` endpoint.
+- the **server** needs only an Ably API key (no `.p8` files, no JWT signing,
+  no Firebase SDK), no direct APNs or FCM connections;
+- the **iOS and Android apps** authenticate with Ably token auth via the
+  server's `authUrl` endpoint.
+
+The dashboard has one tab per platform: **iOS Live Activity** and
+**Android Live Update**.
 
 Both Live Activity flows are covered, end to end:
 
@@ -18,6 +23,13 @@ Both Live Activity flows are covered, end to end:
 |---|---|----------|
 | **Broadcast updates** | The activity is started on-device and subscribes to an APNs broadcast channel; one push from the server updates *every* subscribed device at once | iOS 18+  |
 | **Push-to-start** | The server starts a Live Activity remotely on devices that never opened the flow — targeted by Ably channel or device ID | iOS 18+  |
+
+Android ([Tutorial C](#tutorial-c--android-live-updates)) mirrors these with
+a data-only FCM push the app renders itself:
+
+| Flow | What happens | Requires |
+|---|---|----------|
+| **Remote start / update / end** | The server pushes the full game state to devices subscribed to an Ably channel (one publish, every device) or to one device ID; the app shows it as a Live Update and in the score widget | Android 8+ (Live Update promotion: Android 16+) |
 
 ## How it works
 
@@ -39,6 +51,18 @@ Both Live Activity flows are covered, end to end:
    (`start` / `update` / `end`); Ably signs the APNs request with your `.p8`
    and APNs fans the update out to every subscribed device.
 
+On Android there is no server-rendered UI like a Live Activity, so every
+event is a data-only push carrying the whole game state:
+
+```
+┌────────────────┐  channel publish with  ┌────────┐   FCM    ┌──────────────────────┐
+│ Node dashboard │  extras.push, or push  │  Ably  │ ────────▶│ Android app           │
+│  Android tab   │ ──────────────────────▶│        │  data    │  FirebaseMessaging-   │
+│                │  admin publish to a    │ holds  │  message │  Service → Live Update│
+│  /api/auth ◀───┼─ device ID ────────────┼ FCM SA ┼──────────┤  notification+widget │
+└────────────────┘                        └────────┘          └──────────────────────┘
+```
+
 ## What's in the repo
 
 ```
@@ -50,16 +74,29 @@ ios/                                iOS app (Xcode project)
     Views/                            SwiftUI control panel
   GameScoreWidget/                  Widget extension — Lock Screen + Dynamic Island UI
 
+android/                            Android app (Gradle project, Kotlin + Compose)
+  app/src/main/java/com/ably/example/liveupdate/
+    model/GameState.kt                GameState — the FCM data wire contract
+    model/GameStore.kt                Persisted latest game (read by the widget)
+    LiveGame.kt                       Applies start/update/end to notification + widget
+    push/AblyPushManager.kt           Ably device activation (FCM) + channel subscribe
+    push/LiveUpdateMessagingService.kt  FCM receiver: token refresh + incoming pushes
+    notification/LiveUpdateNotifier.kt  The Live Update (promoted ongoing notification)
+    widget/GameScoreWidgetProvider.kt   Home-screen score widget (RemoteViews)
+    ui/                               Compose control panel
+
 server/                             Node.js dashboard
   server.js                           Express API + Ably token auth endpoint
-  ably-live-activity.js               Ably push admin client (broadcast + live activity)
+  ably-live-activity.js               iOS: Ably push admin client (broadcast + live activity)
+  ably-live-update.js                 Android: data-only FCM pushes via Ably
   public/                             Web dashboard (HTML/CSS/JS)
 ```
 
 **SDK versions:** [ably-cocoa 1.2.62+](https://github.com/ably/ably-cocoa)
 (Swift Package Manager) on iOS, [ably 2.24.0+](https://www.npmjs.com/package/ably)
 (npm) on the server — the first releases with the Live Activity push admin and
-push-to-start APIs.
+push-to-start APIs — and [ably-android 1.8.2](https://github.com/ably/ably-java)
+on Android.
 
 ## Prerequisites
 
@@ -68,6 +105,10 @@ push-to-start APIs.
 - An **iPhone** iOS 18+
 - **Xcode 15+** and **Node.js 18+**.
 - An **Ably account** ([free signup](https://ably.com/signup)).
+- For Android: a **Firebase project**, **Android Studio** (or JDK 17 + the
+  Android SDK 36), and an Android 8+ device or emulator with Google Play
+  services. Live Updates need Android 16+; older versions show a regular
+  ongoing notification.
 
 ## Step 1 — Configure Ably
 
@@ -75,9 +116,18 @@ push-to-start APIs.
 2. In the app's **Push** settings, upload your APNs auth key: the `.p8`
    contents, Key ID, Team ID, and your app's bundle ID. Select the sandbox
    APNs endpoint for development builds.
-3. Create an API key with the **Push Admin** capability.
+3. For Android: in the Firebase console, add an Android app with package
+   name `com.ably.example.liveupdate`, then under Project settings → Service
+   accounts generate a private key (JSON) and upload it in the Ably app's
+   **Push** settings (FCM section).
+4. For Android channel targeting: under the Ably app's **Settings → Rules**,
+   add a channel rule for the `games` namespace with **Push notifications
+   enabled**. Publishes with a push payload are rejected on other channels
+   ("Published push notification to not push-enabled channel").
+5. Create an API key with the **Push Admin** and **Publish** capabilities.
 
-That's the only place your Apple credentials live — the server never sees them.
+That's the only place your Apple and Firebase credentials live — the server
+never sees them.
 
 ## Step 2 — Run the server
 
@@ -118,6 +168,34 @@ If you're recreating the project from scratch instead, the important bits are:
   <key>NSSupportsLiveActivitiesFrequentUpdates</key><true/>
   ```
 - Deployment target iOS 18+ on both targets.
+
+## Step 4 — Build the Android app
+
+1. In the Firebase console, download `google-services.json` for the
+   `com.ably.example.liveupdate` app and save it as
+   `android/app/google-services.json` (it is git-ignored). Without it the app
+   still builds, but push activation reports that Firebase isn't configured.
+2. Open the `android/` folder in Android Studio, or build from the command
+   line:
+   ```bash
+   cd android
+   ./gradlew :app:installDebug
+   ```
+3. On first launch, tap **Allow Notifications**. On Android 16+ the
+   *Notifications* card also shows whether **Live Updates** are allowed for
+   the app, with a shortcut to the setting.
+
+The important bits, if you're recreating the project from scratch:
+
+- `POST_NOTIFICATIONS` and `POST_PROMOTED_NOTIFICATIONS` permissions in the
+  manifest; the second lets an ongoing notification request promotion.
+- A `FirebaseMessagingService` that forwards new FCM tokens to Ably
+  (`ActivationContext.onNewRegistrationToken`) and handles incoming data
+  messages.
+- The notification must meet the promotion rules: ongoing, has a title, a
+  standard or `BigTextStyle`, no custom views, not colorized, on a channel
+  above `IMPORTANCE_MIN` — then `setRequestPromotedOngoing(true)` and
+  `setShortCriticalText(...)` (the status-bar chip).
 
 ## Tutorial A — Broadcast updates (one push, every device)
 
@@ -168,6 +246,37 @@ Ably. This is the two-step device registration released in ably-cocoa 1.2.62.
    background — already subscribed to the broadcast. Use **Send Update** /
    **End Activity** as before.
 
+## Tutorial C — Android Live Updates
+
+The server pushes the full game state to Android devices; the app renders it
+as a Live Update notification and in the home-screen widget.
+
+**On the device (one-time setup):**
+
+1. Check the *Server URL* (the emulator reaches your machine at
+   `http://10.0.2.2:3000`; a physical device needs your machine's LAN IP) and
+   tap **Activate Device with Ably**. `push.activate()` fetches an FCM
+   registration token and registers the device with Ably; the **Ably Device
+   ID** then appears in the app.
+2. Subscribe the device to an Ably channel, e.g. `games:lal-bos` (the
+   namespace needs the push rule from Step 1).
+3. Optionally tap **Add Widget to Home Screen** to pin the Game Score widget.
+
+**From the dashboard (Android Live Update tab):**
+
+4. Enter the channel from step 2 and/or paste the Device ID, set the teams,
+   and click **Start Live Update**. The Live Update appears — even with the
+   app in the background — and the widget shows the game.
+5. Change the points, status, period, clock or last play and click **Send
+   Update**: the notification's score chip, the expanded notification and the
+   widget all update together. Subscribe more devices to the same channel to
+   see one publish reach all of them.
+6. **End Live Update** turns the notification into a dismissable final score
+   (cleared after an hour) and the widget shows *FINAL*.
+
+You can also tap **Start Live Update Locally** in the app and drive it from
+the dashboard in the same way.
+
 ## API reference
 
 Everything the server does goes through the Ably JS SDK's push admin API:
@@ -206,6 +315,32 @@ The `apns` field is a standard [APNs Live Activity payload](https://developer.ap
 caches the last update so late-joining devices receive the current
 content-state when they subscribe.
 
+For Android, every event is a data-only push with the full game state (FCM
+data values must be strings). Channel targeting is a normal channel publish
+with a push payload in `extras`; device targeting uses push admin publish:
+
+```js
+const push = {
+  data: {
+    event: 'update',                    // 'start' | 'update' | 'end'
+    homeTeam: 'Lakers', awayTeam: 'Celtics',
+    homeScore: '102', awayScore: '99',
+    gameStatus: 'live', period: 'Q4', clock: '1:12', lastPlay: 'James dunk',
+    timestamp: String(Date.now()),      // lets the app drop out-of-order pushes
+  },
+  fcm: { priority: 'HIGH' },            // merged into the FCM AndroidConfig
+};
+
+// Every device subscribed to the channel (needs a push-enabled channel rule)
+await rest.channels.get('games:lal-bos').publish({ name: 'live-update', extras: { push } });
+// One device
+await rest.push.admin.publish({ deviceId }, push);
+```
+
+There is no `notification` block, so FCM always delivers the message to the
+app's `FirebaseMessagingService.onMessageReceived`, in the foreground and the
+background, and the app builds the Live Update itself.
+
 The token auth endpoint is a one-liner — the device's `authUrl` points here:
 
 ```js
@@ -231,3 +366,12 @@ app.get('/api/auth', async (req, res) => {
 - **Broadcast subscribe silently ignored** — `pushType: .channel` requires
   iOS 18+; on 17.x start the activity without a channel and use its
   per-activity update token instead.
+- **Android: activation fails or never completes** — `app/google-services.json`
+  must belong to the Firebase project whose service account is uploaded to
+  Ably, and the device or emulator needs Google Play services.
+- **Android: "Published push notification to not push-enabled channel"** —
+  add the push-enabled channel rule for the namespace (Step 1), or target the
+  device by ID instead.
+- **Android: the notification isn't promoted to a Live Update** — needs
+  Android 16+, and Live Updates must be allowed for the app (the app's
+  *Notifications* card shows the state and links to the setting).
