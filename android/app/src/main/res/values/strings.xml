@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">NBA Live Update</string>
+    <string name="widget_name">Game Score</string>
+    <string name="widget_description">Live score of the current game, updated by Ably push</string>
+    <string name="widget_empty">No live game</string>
+    <string name="notification_channel_name">Live game score</string>
+    <string name="notification_channel_description">Live Updates for the game you are following</string>
+</resources>

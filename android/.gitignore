@@ -1,0 +1,9 @@
+.gradle/
+build/
+local.properties
+*.iml
+.idea/
+.kotlin/
+captures/
+# Firebase config is per-project; download your own from the Firebase console.
+app/google-services.json
