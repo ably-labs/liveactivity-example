@@ -5,6 +5,7 @@ const express = require('express');
 const path = require('node:path');
 const lazyRest = require('./ably-rest');
 const AblyLiveActivity = require('./ably-live-activity');
+const AblyLiveUpdate = require('./ably-live-update');
 
 const app = express();
 app.use(express.json());
@@ -12,10 +13,11 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 const getRest = lazyRest(process.env.ABLY_API_KEY);
 const liveActivity = new AblyLiveActivity({ getRest });
+const liveUpdate = new AblyLiveUpdate({ getRest });
 
-// Ably token auth endpoint. The iOS app points its Ably `authUrl` here; we
-// return a signed TokenRequest so the device can authenticate (and activate
-// itself for Live Activity push-to-start) without ever seeing the API key.
+// Ably token auth endpoint. The iOS and Android apps point their Ably `authUrl`
+// here; we return a signed TokenRequest so the device can authenticate (and
+// activate itself for push) without ever seeing the API key.
 app.get('/api/auth', async (req, res) => {
   try {
     const tokenRequest = await liveActivity.createTokenRequest({ clientId: req.query.clientId });
@@ -88,6 +90,37 @@ app.post('/api/live-activity/end', async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
+// --- Android Live Updates -------------------------------------------------
+// Every Android event carries the full game state and is sent to the devices
+// subscribed to the given Ably channels and/or one device ID.
+
+function validateAndroidTarget(body) {
+  const { channels, deviceId, homeTeam, awayTeam } = body;
+  const hasChannels = Array.isArray(channels) && channels.length > 0;
+  if (!hasChannels && !deviceId) {
+    return 'at least one channel or a deviceId is required';
+  }
+  if (!homeTeam || !awayTeam) {
+    return 'homeTeam and awayTeam are required';
+  }
+  return null;
+}
+
+for (const event of ['start', 'update', 'end']) {
+  app.post(`/api/android/${event}`, async (req, res) => {
+    const error = validateAndroidTarget(req.body);
+    if (error) {
+      return res.status(400).json({ error });
+    }
+    try {
+      await liveUpdate[event](req.body);
+      res.json({ success: true });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+}
 
 const PORT = process.env.PORT || 3000;
 
