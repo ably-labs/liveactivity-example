@@ -3,13 +3,15 @@
 require('dotenv').config();
 const express = require('express');
 const path = require('node:path');
+const lazyRest = require('./ably-rest');
 const AblyLiveActivity = require('./ably-live-activity');
 
 const app = express();
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-const liveActivity = new AblyLiveActivity({ apiKey: process.env.ABLY_API_KEY });
+const getRest = lazyRest(process.env.ABLY_API_KEY);
+const liveActivity = new AblyLiveActivity({ getRest });
 
 // Ably token auth endpoint. The iOS app points its Ably `authUrl` here; we
 // return a signed TokenRequest so the device can authenticate (and activate

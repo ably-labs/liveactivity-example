@@ -1,7 +1,5 @@
 'use strict';
 
-const Ably = require('ably');
-
 // Drives iOS Live Activities over an APNs broadcast channel via Ably's push
 // admin API. Ably holds the APNs auth key (configured in the Ably app), so this
 // server only needs an Ably API key — no .p8 / JWT signing of its own.
@@ -19,24 +17,13 @@ const Ably = require('ably');
 // basketball game: teams, points, status, period, clock, last play). Ably
 // passes them to APNs as-is.
 class AblyLiveActivity {
-  constructor({ apiKey }) {
-    this.apiKey = apiKey;
-    this._rest = null;
+  // `getRest` returns the shared Ably Rest client (see ably-rest.js).
+  constructor({ getRest }) {
+    this._getRest = getRest;
   }
 
-  // Lazily construct the Rest client so the server can still boot and serve the
-  // dashboard without a key — requests then fail with a clear message.
   get rest() {
-    if (!this._rest) {
-      if (!this.apiKey) {
-        throw new Error('ABLY_API_KEY is not set — add it to server/.env');
-      }
-      this._rest = new Ably.Rest({
-        key: this.apiKey,
-        useBinaryProtocol: false,
-      });
-    }
-    return this._rest;
+    return this._getRest();
   }
 
   // Create an APNs broadcast channel. messageStoragePolicy: 1 caches the last
