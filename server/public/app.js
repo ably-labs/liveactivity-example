@@ -108,6 +108,77 @@ document.getElementById('btn-end').addEventListener('click', () => {
   }, btn);
 });
 
+// --- Android Live Updates ---------------------------------------------------
+
+// Target devices + teams, shared by every Android event. Returns null (after
+// logging why) when the target is incomplete.
+function androidTarget() {
+  const channels = document.getElementById('and-channels').value
+    .split(',')
+    .map((c) => c.trim())
+    .filter(Boolean);
+  const deviceId = document.getElementById('and-device-id').value.trim();
+  if (channels.length === 0 && !deviceId) {
+    log('Provide at least one Ably channel or a device ID', 'err');
+    return null;
+  }
+  return {
+    channels,
+    ...(deviceId ? { deviceId } : {}),
+    homeTeam: document.getElementById('and-home').value.trim(),
+    awayTeam: document.getElementById('and-away').value.trim(),
+  };
+}
+
+function androidScore() {
+  return {
+    homeScore: parseInt(document.getElementById('and-home-score').value, 10),
+    awayScore: parseInt(document.getElementById('and-away-score').value, 10),
+  };
+}
+
+document.getElementById('btn-and-start').addEventListener('click', (e) => {
+  const target = androidTarget();
+  if (target) apiPost('/api/android/start', target, e.currentTarget);
+});
+
+document.getElementById('btn-and-update').addEventListener('click', (e) => {
+  const target = androidTarget();
+  if (!target) return;
+  apiPost('/api/android/update', {
+    ...target,
+    ...androidScore(),
+    gameStatus: document.getElementById('and-status').value,
+    period: document.getElementById('and-period').value,
+    clock: document.getElementById('and-clock').value.trim(),
+    lastPlay: document.getElementById('and-play').value.trim(),
+  }, e.currentTarget);
+});
+
+document.getElementById('btn-and-end').addEventListener('click', (e) => {
+  const target = androidTarget();
+  if (target) apiPost('/api/android/end', { ...target, ...androidScore() }, e.currentTarget);
+});
+
+// --- Tabs -------------------------------------------------------------------
+
+// The selected tab is kept in the URL hash so a reload stays on it.
+function selectTab(name) {
+  for (const tab of document.querySelectorAll('.tab')) {
+    const selected = tab.dataset.tab === name;
+    tab.setAttribute('aria-selected', String(selected));
+    document.getElementById(`panel-${tab.dataset.tab}`).hidden = !selected;
+  }
+}
+
+for (const tab of document.querySelectorAll('.tab')) {
+  tab.addEventListener('click', () => {
+    history.replaceState(null, '', `#${tab.dataset.tab}`);
+    selectTab(tab.dataset.tab);
+  });
+}
+selectTab(location.hash === '#android' ? 'android' : 'ios');
+
 // Clear log
 document.getElementById('btn-clear').addEventListener('click', () => {
   document.getElementById('log').innerHTML = '';

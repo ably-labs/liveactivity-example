@@ -91,6 +91,45 @@ main {
   background: var(--purple-dim);
   color: var(--purple);
 }
+.tag-green {
+  background: var(--success-dim);
+  color: var(--success);
+}
+
+/* Tabs */
+.tabs {
+  margin-left: auto;
+  display: flex;
+  gap: 4px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 3px;
+}
+.tab {
+  background: transparent;
+  border: none;
+  border-radius: 5px;
+  color: var(--text-2);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.tab:hover { color: var(--text); }
+.tab[aria-selected="true"] {
+  background: var(--accent-dim);
+  color: var(--accent);
+}
+
+.tab-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.tab-panel[hidden] { display: none; }
 
 .hint {
   font-size: 12px;
@@ -210,5 +249,7 @@ input:focus, select:focus {
 
 @media (max-width: 640px) {
   .row-2, .row-3 { grid-template-columns: 1fr; }
+  .header-inner { height: auto; padding: 12px 0; flex-wrap: wrap; }
+  .tabs { margin-left: 0; }
   main { padding: 20px 16px 40px; }
 }

@@ -3,17 +3,24 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Live Activity Dashboard</title>
+  <title>Live Score Dashboard</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <header>
     <div class="header-inner">
-      <h1>NBA Live Activity Dashboard</h1>
+      <h1>NBA Live Score Dashboard</h1>
+      <nav class="tabs" role="tablist">
+        <button class="tab" role="tab" data-tab="ios" aria-selected="true">iOS Live Activity</button>
+        <button class="tab" role="tab" data-tab="android" aria-selected="false">Android Live Update</button>
+      </nav>
     </div>
   </header>
 
   <main>
+
+    <!-- ===================== iOS ===================== -->
+    <div class="tab-panel" id="panel-ios" role="tabpanel">
 
     <!-- Broadcast channel -->
     <section class="card">
@@ -112,6 +119,102 @@
         <button class="btn danger" id="btn-end">End Activity</button>
       </div>
     </section>
+
+    </div>
+
+    <!-- ===================== Android ===================== -->
+    <div class="tab-panel" id="panel-android" role="tabpanel" hidden>
+
+    <!-- Target devices -->
+    <section class="card">
+      <div class="card-header">
+        <h2>Target Devices</h2>
+        <span class="tag tag-green">FCM via Ably</span>
+      </div>
+      <p class="hint">Android devices activate with Ably push (FCM) and subscribe to an Ably channel in the app. Target them by channel — one publish reaches every subscribed device — or by the <strong>Ably Device ID</strong> shown in the app. Provide at least one. Every event carries the full game state, so the teams are sent each time.</p>
+      <div class="field">
+        <label for="and-channels">Ably Channel(s) <span class="tag">comma-separated</span></label>
+        <input type="text" id="and-channels" placeholder="e.g. games:lal-bos">
+      </div>
+      <div class="field">
+        <label for="and-device-id">Ably Device ID <span class="tag">optional</span></label>
+        <input type="text" id="and-device-id" placeholder="Paste the device ID from the app after activation">
+      </div>
+      <div class="row-2">
+        <div class="field">
+          <label for="and-home">Home Team</label>
+          <input type="text" id="and-home" value="Lakers">
+        </div>
+        <div class="field">
+          <label for="and-away">Away Team</label>
+          <input type="text" id="and-away" value="Celtics">
+        </div>
+      </div>
+    </section>
+
+    <!-- Start Live Update -->
+    <section class="card">
+      <div class="card-header">
+        <h2>Start Live Update</h2>
+        <span class="tag">Remote start</span>
+      </div>
+      <p class="hint">Sends a data-only push; the app posts a promoted ongoing notification (a <strong>Live Update</strong> on Android 16+, a regular ongoing notification on older versions) and refreshes the home-screen score widget — even when the app is in the background.</p>
+      <button class="btn primary" id="btn-and-start">Start Live Update</button>
+    </section>
+
+    <!-- Update / End -->
+    <section class="card">
+      <div class="card-header">
+        <h2>Update / End</h2>
+        <span class="tag tag-green">Channel fan-out</span>
+      </div>
+      <p class="hint">Push the new score to the target devices above. The Live Update and the widget update together; <strong>End Live Update</strong> shows the final score as a dismissable notification.</p>
+      <div class="row-3">
+        <div class="field">
+          <label for="and-home-score">Home Points</label>
+          <input type="number" id="and-home-score" value="0" min="0">
+        </div>
+        <div class="field">
+          <label for="and-away-score">Away Points</label>
+          <input type="number" id="and-away-score" value="0" min="0">
+        </div>
+        <div class="field">
+          <label for="and-status">Game Status</label>
+          <select id="and-status">
+            <option value="scheduled">Scheduled</option>
+            <option value="live" selected>Live</option>
+            <option value="halftime">Halftime</option>
+            <option value="finished">Final</option>
+          </select>
+        </div>
+      </div>
+      <div class="row-2">
+        <div class="field">
+          <label for="and-period">Period</label>
+          <select id="and-period">
+            <option value="Q1">Q1</option>
+            <option value="Q2">Q2</option>
+            <option value="Q3">Q3</option>
+            <option value="Q4">Q4</option>
+            <option value="OT">OT</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="and-clock">Game Clock</label>
+          <input type="text" id="and-clock" value="12:00" placeholder="e.g. 7:32">
+        </div>
+      </div>
+      <div class="field">
+        <label for="and-play">Last Play</label>
+        <input type="text" id="and-play" placeholder="e.g. James dunk (31 PTS)">
+      </div>
+      <div class="btn-row">
+        <button class="btn success" id="btn-and-update">Send Update</button>
+        <button class="btn danger" id="btn-and-end">End Live Update</button>
+      </div>
+    </section>
+
+    </div>
 
     <!-- Log -->
     <section class="card">
