@@ -274,9 +274,6 @@ as a Live Update notification and in the home-screen widget.
 6. **End Live Update** turns the notification into a dismissable final score
    (cleared after an hour) and the widget shows *FINAL*.
 
-You can also tap **Start Live Update Locally** in the app and drive it from
-the dashboard in the same way.
-
 ## API reference
 
 Everything the server does goes through the Ably JS SDK's push admin API:

@@ -6,6 +6,14 @@
     <!-- Lets an ongoing notification be promoted to a Live Update (Android 16+). -->
     <uses-permission android:name="android.permission.POST_PROMOTED_NOTIFICATIONS" />
 
+    <!-- Lets the app check whether this Android build has a Live Update
+         settings screen, i.e. whether it supports Live Updates at all. -->
+    <queries>
+        <intent>
+            <action android:name="android.settings.APP_NOTIFICATION_PROMOTION_SETTINGS" />
+        </intent>
+    </queries>
+
     <!-- usesCleartextTraffic: the app fetches Ably tokens from the local dev
          server over plain http (e.g. http://10.0.2.2:3000 on the emulator). -->
     <application
@@ -25,6 +33,11 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- FCM posts background `notification` pushes to this channel. -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_channel_id"
+            android:value="pushes" />
 
         <service
             android:name=".push.LiveUpdateMessagingService"

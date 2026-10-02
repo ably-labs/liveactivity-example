@@ -36,17 +36,6 @@ data class GameState(
     fun toJson(): JSONObject = JSONObject(toMap())
 
     companion object {
-        fun initial(homeTeam: String, awayTeam: String) = GameState(
-            homeTeam = homeTeam,
-            awayTeam = awayTeam,
-            homeScore = 0,
-            awayScore = 0,
-            gameStatus = GameStatus.SCHEDULED,
-            period = "Q1",
-            clock = "12:00",
-            lastPlay = "Tip-off soon",
-        )
-
         /** Parses FCM data (all values are strings); null if the teams are missing. */
         fun fromMap(data: Map<String, String>): GameState? {
             val homeTeam = data["homeTeam"]?.takeIf { it.isNotBlank() } ?: return null

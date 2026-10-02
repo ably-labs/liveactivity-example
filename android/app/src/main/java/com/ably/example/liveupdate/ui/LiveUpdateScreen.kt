@@ -2,11 +2,13 @@ package com.ably.example.liveupdate.ui
 
 import android.Manifest
 import android.app.NotificationManager
+import android.content.ActivityNotFoundException
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -53,7 +55,6 @@ import androidx.compose.ui.unit.dp
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import com.ably.example.liveupdate.LiveGame
-import com.ably.example.liveupdate.model.GameState
 import com.ably.example.liveupdate.model.GameStore
 import com.ably.example.liveupdate.push.AblyPushManager
 import com.ably.example.liveupdate.widget.GameScoreWidgetProvider
@@ -73,14 +74,7 @@ fun LiveUpdateScreen(pushManager: AblyPushManager, resumeCount: Int) {
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            var homeTeam by rememberSaveable { mutableStateOf("Lakers") }
-            var awayTeam by rememberSaveable { mutableStateOf("Celtics") }
-
-            Section("Game Setup") {
-                OutlinedTextField(homeTeam, { homeTeam = it }, Modifier.fillMaxWidth(), label = { Text("Home Team") })
-                OutlinedTextField(awayTeam, { awayTeam = it }, Modifier.fillMaxWidth(), label = { Text("Away Team") })
-            }
-            LiveUpdateControlSection(homeTeam, awayTeam)
+            LiveUpdateControlSection()
             PermissionsSection(resumeCount)
             AblyPushSection(pushManager)
             WidgetSection()
@@ -89,7 +83,7 @@ fun LiveUpdateScreen(pushManager: AblyPushManager, resumeCount: Int) {
 }
 
 @Composable
-private fun LiveUpdateControlSection(homeTeam: String, awayTeam: String) {
+private fun LiveUpdateControlSection() {
     val context = LocalContext.current
     val snapshot by GameStore.snapshot.collectAsState()
     Section("Live Update Control") {
@@ -105,11 +99,7 @@ private fun LiveUpdateControlSection(homeTeam: String, awayTeam: String) {
                 colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
             ) { Text("End Live Update") }
         } else {
-            Hint("Starts the Live Update on this device. Score updates then arrive by Ably push from the dashboard's Android tab.")
-            Button(
-                onClick = { LiveGame.start(context, GameState.initial(homeTeam.trim(), awayTeam.trim())) },
-                enabled = homeTeam.isNotBlank() && awayTeam.isNotBlank(),
-            ) { Text("Start Live Update Locally") }
+            Hint("No Live Update running. Start one by Ably push from the dashboard's Android tab.")
         }
     }
 }
@@ -119,14 +109,10 @@ private fun PermissionsSection(resumeCount: Int) {
     val context = LocalContext.current
     // Re-read on every resume, after the user may have changed settings.
     var notificationsEnabled by remember { mutableStateOf(true) }
-    var canPromote by remember { mutableStateOf<Boolean?>(null) }
+    var promotion by remember { mutableStateOf(Promotion.UNSUPPORTED_VERSION) }
     androidx.compose.runtime.LaunchedEffect(resumeCount) {
         notificationsEnabled = NotificationManagerCompat.from(context).areNotificationsEnabled()
-        canPromote = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.BAKLAVA) {
-            context.getSystemService(NotificationManager::class.java).canPostPromotedNotifications()
-        } else {
-            null
-        }
+        promotion = promotionState(context)
     }
     val requestPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
         notificationsEnabled = it
@@ -142,17 +128,21 @@ private fun PermissionsSection(resumeCount: Int) {
                 if (needsRuntimePermission) {
                     requestPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
                 } else {
-                    context.startActivity(appSettingsIntent(context, Settings.ACTION_APP_NOTIFICATION_SETTINGS))
+                    openAppSettings(context, Settings.ACTION_APP_NOTIFICATION_SETTINGS)
                 }
             }) { Text("Allow Notifications") }
         }
-        when (canPromote) {
-            null -> Hint("Live Updates (promoted notifications) need Android 16+. On this version the game shows as a regular ongoing notification.")
-            true -> StatusRow("Live Updates", "Allowed", true)
-            false -> {
+        when (promotion) {
+            Promotion.UNSUPPORTED_VERSION -> Hint("Live Updates (promoted notifications) need Android 16+. On this version the game shows as a regular ongoing notification.")
+            Promotion.UNSUPPORTED_BUILD -> {
+                StatusRow("Live Updates", "Not available on this build", false)
+                Hint("This Android 16 build doesn't include Live Updates yet (they shipped in Android 16 QPR1). The game shows as a regular ongoing notification. Use an Android 16 QPR1+ device or emulator image to see it promoted.")
+            }
+            Promotion.ALLOWED -> StatusRow("Live Updates", "Allowed", true)
+            Promotion.TURNED_OFF -> {
                 StatusRow("Live Updates", "Turned off for this app", false)
                 OutlinedButton(onClick = {
-                    context.startActivity(appSettingsIntent(context, Settings.ACTION_APP_NOTIFICATION_PROMOTION_SETTINGS))
+                    openAppSettings(context, Settings.ACTION_APP_NOTIFICATION_PROMOTION_SETTINGS)
                 }) { Text("Open Live Update Settings") }
             }
         }
@@ -284,5 +274,38 @@ private fun CopyableValue(label: String, value: String?) {
     }
 }
 
-private fun appSettingsIntent(context: Context, action: String) =
-    Intent(action).putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+private enum class Promotion { UNSUPPORTED_VERSION, UNSUPPORTED_BUILD, ALLOWED, TURNED_OFF }
+
+// The first Android 16 builds have the promotion API but not the feature:
+// canPostPromotedNotifications() is always false and there is no settings
+// screen to turn it on. The missing screen tells those builds apart from a
+// user who switched Live Updates off.
+private fun promotionState(context: Context): Promotion {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.BAKLAVA) return Promotion.UNSUPPORTED_VERSION
+    if (context.getSystemService(NotificationManager::class.java).canPostPromotedNotifications()) {
+        return Promotion.ALLOWED
+    }
+    val settingsScreen = context.packageManager.resolveActivity(
+        Intent(Settings.ACTION_APP_NOTIFICATION_PROMOTION_SETTINGS),
+        PackageManager.MATCH_DEFAULT_ONLY,
+    )
+    return if (settingsScreen == null) Promotion.UNSUPPORTED_BUILD else Promotion.TURNED_OFF
+}
+
+// Not every device ships a screen for every settings action (e.g. the Android 16
+// emulator has none for APP_NOTIFICATION_PROMOTION_SETTINGS), so fall back to
+// the app's notification settings, then to its app info page.
+private fun openAppSettings(context: Context, action: String) {
+    val intents = listOf(
+        Intent(action).putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName),
+        Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName),
+        Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", context.packageName, null)),
+    )
+    for (intent in intents) {
+        try {
+            context.startActivity(intent)
+            return
+        } catch (_: ActivityNotFoundException) {
+        }
+    }
+}

@@ -14,9 +14,6 @@ import com.ably.example.liveupdate.widget.GameScoreWidgetProvider
 object LiveGame {
     private const val TAG = "LiveGame"
 
-    fun start(context: Context, state: GameState) =
-        render(context, GameSnapshot(state, isLive = true, timestamp = System.currentTimeMillis()))
-
     fun end(context: Context) {
         val current = GameStore.load(context) ?: return
         render(context, GameSnapshot(current.state.finished(), isLive = false, System.currentTimeMillis()))
