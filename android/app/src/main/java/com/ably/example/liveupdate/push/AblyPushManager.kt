@@ -16,6 +16,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import org.json.JSONObject
+import java.net.URL
+import kotlin.concurrent.thread
 
 // Registers this device with Ably push (FCM) and subscribes it to channels,
 // so the server can target it by channel name or device ID.
@@ -81,7 +84,8 @@ class AblyPushManager(context: Context) {
 
     /**
      * Activates the device with Ably. [serverBaseUrl] is the dashboard server;
-     * its `/api/auth` endpoint mints the TokenRequest consumed via authUrl.
+     * its `/api/config` endpoint names the Ably environment, and its
+     * `/api/auth` endpoint mints the TokenRequest consumed via authUrl.
      */
     fun activate(serverBaseUrl: String) {
         if (FirebaseApp.getApps(context).isEmpty()) {
@@ -90,12 +94,36 @@ class AblyPushManager(context: Context) {
         }
         val base = serverBaseUrl.trim().trimEnd('/')
         _state.update {
-            it.copy(isActivating = true, isActivated = false, errorMessage = null, statusMessage = "Activating device…")
+            it.copy(isActivating = true, isActivated = false, errorMessage = null, statusMessage = "Fetching server config…")
         }
+        thread {
+            val ablyEndpoint = try {
+                val config = JSONObject(URL("$base/api/config").readText())
+                if (config.isNull("ablyEndpoint")) null else config.getString("ablyEndpoint")
+            } catch (e: Exception) {
+                _state.update {
+                    it.copy(isActivating = false, statusMessage = null, errorMessage = "Couldn't load server config: ${e.message}")
+                }
+                return@thread
+            }
+            startActivation(base, ablyEndpoint)
+        }
+    }
+
+    private fun startActivation(base: String, ablyEndpoint: String?) {
+        _state.update { it.copy(statusMessage = "Activating device…") }
         try {
             val options = ClientOptions().apply {
                 authUrl = "$base/api/auth"
                 authMethod = "GET"
+                // ably-android 1.8 predates the `endpoint` option, so map the
+                // server's ABLY_ENDPOINT onto the legacy options: a hostname
+                // becomes `restHost`, a name such as `sandbox` becomes `environment`.
+                when {
+                    ablyEndpoint == null -> Unit
+                    '.' in ablyEndpoint || ablyEndpoint == "localhost" -> restHost = ablyEndpoint
+                    else -> environment = ablyEndpoint
+                }
             }
             val rest = AblyRest(options)
             rest.setAndroidContext(context)

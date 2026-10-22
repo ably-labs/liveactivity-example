@@ -65,6 +65,11 @@ struct LiveActivityControlView: View {
                         token: manager.pushToStartToken,
                         placeholder: "Waiting for token..."
                     )
+                    TokenDisplayView(
+                        label: "DraftAttributes Token (not sent to Ably)",
+                        token: manager.draftPushToStartToken,
+                        placeholder: "Waiting for token..."
+                    )
                 }
             }
 

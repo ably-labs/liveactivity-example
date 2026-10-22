@@ -30,13 +30,15 @@ final class AblyPushManager: NSObject, ARTPushRegistererDelegate {
     private var pendingPushToStartToken: Data?
 
     // Activate the device with Ably, then register the push-to-start token.
-    // `serverBaseURL` is the base of the dashboard server (its `/api/auth`
-    // endpoint mints the Ably TokenRequest consumed via authUrl).
-    // `pushToStartToken` is the hex string surfaced in the UI; it is converted
-    // back to the raw Data the SDK expects.
+    // `serverBaseURL` is the base of the dashboard server (its `/api/config`
+    // endpoint names the Ably environment, and its `/api/auth` endpoint mints
+    // the Ably TokenRequest consumed via authUrl). `pushToStartToken` is the
+    // hex string surfaced in the UI; it is converted back to the raw Data the
+    // SDK expects.
     func activate(serverBaseURL: String, pushToStartToken: String) {
         let base = serverBaseURL.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let authUrl = URL(string: "\(base)/api/auth") else {
+        guard let configUrl = URL(string: "\(base)/api/config"),
+              let authUrl = URL(string: "\(base)/api/auth") else {
             errorMessage = "Invalid server URL"
             return
         }
@@ -45,18 +47,45 @@ final class AblyPushManager: NSObject, ARTPushRegistererDelegate {
             return
         }
 
+        isActivating = true
+        isActivated = false
+        errorMessage = nil
+        statusMessage = "Fetching server config…"
+
+        URLSession.shared.dataTask(with: configUrl) { data, _, error in
+            let config = data.flatMap { try? JSONDecoder().decode(ServerConfig.self, from: $0) }
+            DispatchQueue.main.async {
+                guard let config else {
+                    self.isActivating = false
+                    self.statusMessage = nil
+                    self.errorMessage = "Couldn't load server config: \(error?.localizedDescription ?? "invalid response")"
+                    return
+                }
+                self.startActivation(authUrl: authUrl, ablyEndpoint: config.ablyEndpoint, pushToStartToken: tokenData)
+            }
+        }.resume()
+    }
+
+    private func startActivation(authUrl: URL, ablyEndpoint: String?, pushToStartToken: Data) {
         let options = ARTClientOptions()
         options.authUrl = authUrl
         options.authMethod = "GET"
         options.pushRegistererDelegate = self
+        // ably-cocoa 1.2 predates the `endpoint` option, so map the server's
+        // ABLY_ENDPOINT onto the legacy options: a hostname becomes `restHost`,
+        // a name such as `sandbox` becomes `environment`.
+        if let ablyEndpoint {
+            if ablyEndpoint.contains(".") || ablyEndpoint == "localhost" {
+                options.restHost = ablyEndpoint
+            } else {
+                options.environment = ablyEndpoint
+            }
+        }
         let rest = ARTRest(options: options)
         self.rest = rest
-        self.pendingPushToStartToken = tokenData
+        self.pendingPushToStartToken = pushToStartToken
         Self.shared = self
 
-        isActivating = true
-        isActivated = false
-        errorMessage = nil
         statusMessage = "Activating device…"
 
         // Standard activation: requests a normal APNs device token, which the
@@ -166,6 +195,11 @@ final class AblyPushManager: NSObject, ARTPushRegistererDelegate {
             self.errorMessage = "Registration failed: \(error?.message ?? "unknown error")"
         }
     }
+}
+
+// Response of the server's `/api/config` endpoint.
+private struct ServerConfig: Decodable {
+    let ablyEndpoint: String?
 }
 
 private extension Data {

@@ -144,6 +144,12 @@ The only required `.env` value is `ABLY_API_KEY` — the key with Push Admin
 capability from Step 1 (Ably dashboard → your app → API Keys). Set `PORT` to
 change the dashboard port (default 3000).
 
+To run against a non-production Ably environment, set `ABLY_ENDPOINT` (e.g.
+`sandbox`, or a hostname) and use an API key from an app in that environment.
+The server passes it to ably-js as the `endpoint` client option, and the iOS
+and Android apps read it from the server's `/api/config` before creating their
+Ably client, so all three talk to the same environment.
+
 ## Step 3 — Build the iOS app
 
 The Xcode project is included; open

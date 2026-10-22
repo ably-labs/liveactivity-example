@@ -5,5 +5,6 @@ import SwiftUI
 struct GameScoreWidgetBundle: WidgetBundle {
     var body: some Widget {
         GameScoreLiveActivity()
+        DraftLiveActivity()
     }
 }

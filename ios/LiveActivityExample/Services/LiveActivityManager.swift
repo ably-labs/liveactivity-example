@@ -6,6 +6,7 @@ final class LiveActivityManager {
     var currentActivity: Activity<GameAttributes>?
     var activityUpdateToken: String?
     var pushToStartToken: String?
+    var draftPushToStartToken: String?
     var errorMessage: String?
 
     var isActivityRunning: Bool { currentActivity != nil }
@@ -17,7 +18,17 @@ final class LiveActivityManager {
         Task {
             for await tokenData in Activity<GameAttributes>.pushToStartTokenUpdates {
                 let token = tokenData.map { String(format: "%02x", $0) }.joined()
+                print("[push-to-start] GameAttributes token: \(token)")
                 await MainActor.run { self.pushToStartToken = token }
+            }
+        }
+        // Observed only for comparison with the GameAttributes token; it is
+        // never registered with Ably.
+        Task {
+            for await tokenData in Activity<DraftAttributes>.pushToStartTokenUpdates {
+                let token = tokenData.map { String(format: "%02x", $0) }.joined()
+                print("[push-to-start] DraftAttributes token: \(token)")
+                await MainActor.run { self.draftPushToStartToken = token }
             }
         }
     }

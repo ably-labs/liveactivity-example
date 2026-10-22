@@ -11,9 +11,17 @@ const app = express();
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-const getRest = lazyRest(process.env.ABLY_API_KEY);
+const ablyEndpoint = process.env.ABLY_ENDPOINT || null;
+const getRest = lazyRest(process.env.ABLY_API_KEY, ablyEndpoint);
 const liveActivity = new AblyLiveActivity({ getRest });
 const liveUpdate = new AblyLiveUpdate({ getRest });
+
+// Client config for the iOS and Android apps. They fetch this before creating
+// their Ably client so they talk to the same Ably environment as the server —
+// a TokenRequest signed with a sandbox key is rejected by production.
+app.get('/api/config', (req, res) => {
+  res.json({ ablyEndpoint });
+});
 
 // Ably token auth endpoint. The iOS and Android apps point their Ably `authUrl`
 // here; we return a signed TokenRequest so the device can authenticate (and

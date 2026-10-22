@@ -64,6 +64,7 @@
 		5C51CD112F72AE410085A93C /* Exceptions for "LiveActivityExample" folder in "GameScoreWidgetExtension" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
+				Models/DraftAttributes.swift,
 				Models/GameAttributes.swift,
 			);
 			target = 5C51CCD42F72A92A0085A93C /* GameScoreWidgetExtension */;

@@ -4,8 +4,9 @@ const Ably = require('ably');
 
 // Returns a getter that lazily constructs a shared Ably Rest client, so the
 // server can still boot and serve the dashboard without a key — requests then
-// fail with a clear message.
-function lazyRest(apiKey) {
+// fail with a clear message. `endpoint` selects a non-production Ably
+// environment (e.g. `sandbox`); omit it for production.
+function lazyRest(apiKey, endpoint) {
   let rest = null;
   return () => {
     if (!rest) {
@@ -14,6 +15,7 @@ function lazyRest(apiKey) {
       }
       rest = new Ably.Rest({
         key: apiKey,
+        ...(endpoint ? { endpoint } : {}),
         useBinaryProtocol: false,
       });
     }
