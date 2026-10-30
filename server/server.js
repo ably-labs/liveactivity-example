@@ -19,8 +19,16 @@ const liveUpdate = new AblyLiveUpdate({ getRest });
 // Client config for the iOS and Android apps. They fetch this before creating
 // their Ably client so they talk to the same Ably environment as the server —
 // a TokenRequest signed with a sandbox key is rejected by production.
+// `ablyHost` is the host ably-js resolved from ABLY_ENDPOINT (e.g.
+// `nonprod:sandbox` → `sandbox.realtime.ably-nonprod.net`); the apps' SDKs
+// predate the `endpoint` option, so they take it as `restHost`. It's null for
+// production, leaving the apps on their defaults (and fallback hosts).
 app.get('/api/config', (req, res) => {
-  res.json({ ablyEndpoint });
+  try {
+    res.json({ ablyHost: ablyEndpoint ? getRest().options.primaryDomain : null });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // Ably token auth endpoint. The iOS and Android apps point their Ably `authUrl`
@@ -100,14 +108,13 @@ app.post('/api/live-activity/end', async (req, res) => {
 });
 
 // --- Android Live Updates -------------------------------------------------
-// Every Android event carries the full game state and is sent to the devices
-// subscribed to the given Ably channels and/or one device ID.
+// Every Android event carries the full game state and is published to the
+// FCM topic the devices subscribed to in the app.
 
 function validateAndroidTarget(body) {
-  const { channels, deviceId, homeTeam, awayTeam } = body;
-  const hasChannels = Array.isArray(channels) && channels.length > 0;
-  if (!hasChannels && !deviceId) {
-    return 'at least one channel or a deviceId is required';
+  const { topic, homeTeam, awayTeam } = body;
+  if (!topic) {
+    return 'topic is required';
   }
   if (!homeTeam || !awayTeam) {
     return 'homeTeam and awayTeam are required';

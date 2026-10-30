@@ -14,9 +14,12 @@
 //   update() : replace the Live Update content and refresh the widget.
 //   end()    : show the final score as a dismissable notification.
 //
-// Devices are targeted the same way as iOS push-to-start: by the Ably channels
-// they subscribed to (one publish fans out to every subscribed device) and/or
-// directly by Ably device ID.
+// Devices are targeted by FCM topic: the app subscribes itself to a topic
+// through Ably (POST /push/fcmTopics/{topic}/subscriptions/{deviceId}), and
+// each event is a single POST /push/fcmTopics/{topic}/messages that FCM fans
+// out to every subscribed device. Ably resolves devices to FCM tokens and calls
+// FCM with the app's service account. There's no ably-js wrapper for these
+// endpoints yet, so they're called through `rest.request()`.
 class AblyLiveUpdate {
   // `getRest` returns the shared Ably Rest client (see ably-rest.js).
   constructor({ getRest }) {
@@ -27,10 +30,9 @@ class AblyLiveUpdate {
     return this._getRest();
   }
 
-  start({ channels, deviceId, homeTeam, awayTeam }) {
+  start({ topic, homeTeam, awayTeam }) {
     return this._send({
-      channels,
-      deviceId,
+      topic,
       event: 'start',
       state: {
         homeTeam,
@@ -45,10 +47,9 @@ class AblyLiveUpdate {
     });
   }
 
-  update({ channels, deviceId, homeTeam, awayTeam, homeScore, awayScore, gameStatus, period, clock, lastPlay }) {
+  update({ topic, homeTeam, awayTeam, homeScore, awayScore, gameStatus, period, clock, lastPlay }) {
     return this._send({
-      channels,
-      deviceId,
+      topic,
       event: 'update',
       state: {
         homeTeam,
@@ -63,10 +64,9 @@ class AblyLiveUpdate {
     });
   }
 
-  end({ channels, deviceId, homeTeam, awayTeam, homeScore, awayScore }) {
+  end({ topic, homeTeam, awayTeam, homeScore, awayScore }) {
     return this._send({
-      channels,
-      deviceId,
+      topic,
       event: 'end',
       state: {
         homeTeam,
@@ -81,24 +81,29 @@ class AblyLiveUpdate {
     });
   }
 
-  _send({ channels, deviceId, event, state }) {
+  async _send({ topic, event, state }) {
     // FCM data values must be strings. `timestamp` lets the app drop pushes
     // that arrive out of order, like `aps.timestamp` does for Live Activities.
     const data = Object.fromEntries(
       Object.entries({ event, ...state, timestamp: Date.now() }).map(([k, v]) => [k, String(v)]),
     );
-    // Data-only (no `notification`), so the app's onMessageReceived always
-    // runs and renders the Live Update itself. The `fcm` override is merged
-    // into the FCM AndroidConfig; high priority wakes the app in Doze.
-    const push = { data, fcm: { priority: 'HIGH' } };
+    // Fields are FCM v1 message fields, passed to FCM as-is. Data-only (no
+    // `notification`), so the app's onMessageReceived always runs and renders
+    // the Live Update itself; high priority wakes the app in Doze.
+    const body = { data, android: { priority: 'high' } };
 
-    const publishes = (channels ?? []).map((name) =>
-      this.rest.channels.get(name).publish({ name: 'live-update', data: state, extras: { push } }),
+    const res = await this.rest.request(
+      'POST',
+      `/push/fcmTopics/${encodeURIComponent(topic)}/messages`,
+      6,
+      null,
+      body,
     );
-    if (deviceId) {
-      publishes.push(this.rest.push.admin.publish({ deviceId }, push));
+    // request() resolves on HTTP errors too, so surface them as rejections.
+    if (!res.success) {
+      throw new Error(`${res.errorMessage} (${res.errorCode})`);
     }
-    return Promise.all(publishes);
+    return res.items[0];
   }
 }
 

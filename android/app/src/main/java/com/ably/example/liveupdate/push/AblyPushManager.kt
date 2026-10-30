@@ -7,11 +7,13 @@ import android.content.IntentFilter
 import androidx.core.content.edit
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import com.google.firebase.FirebaseApp
-import io.ably.lib.realtime.CompletionListener
+import io.ably.lib.http.HttpUtils
 import io.ably.lib.rest.AblyRest
 import io.ably.lib.types.AblyException
+import io.ably.lib.types.AsyncHttpPaginatedResponse
 import io.ably.lib.types.ClientOptions
 import io.ably.lib.types.ErrorInfo
+import io.ably.lib.types.Param
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -20,8 +22,8 @@ import org.json.JSONObject
 import java.net.URL
 import kotlin.concurrent.thread
 
-// Registers this device with Ably push (FCM) and subscribes it to channels,
-// so the server can target it by channel name or device ID.
+// Registers this device with Ably push (FCM) and subscribes it to FCM topics
+// through Ably, so the server can reach it with one publish to the topic.
 //
 // Authentication uses Ably token auth via the server's `authUrl` endpoint, so
 // the API key never reaches the device. Ably reports activation results as
@@ -32,7 +34,7 @@ class AblyPushManager(context: Context) {
         val isActivating: Boolean = false,
         val isActivated: Boolean = false,
         val deviceId: String? = null,
-        val subscribedChannel: String? = null,
+        val subscribedTopic: String? = null,
         val statusMessage: String? = null,
         val errorMessage: String? = null,
     )
@@ -84,7 +86,7 @@ class AblyPushManager(context: Context) {
 
     /**
      * Activates the device with Ably. [serverBaseUrl] is the dashboard server;
-     * its `/api/config` endpoint names the Ably environment, and its
+     * its `/api/config` endpoint names the Ably host, and its
      * `/api/auth` endpoint mints the TokenRequest consumed via authUrl.
      */
     fun activate(serverBaseUrl: String) {
@@ -97,33 +99,16 @@ class AblyPushManager(context: Context) {
             it.copy(isActivating = true, isActivated = false, errorMessage = null, statusMessage = "Fetching server config…")
         }
         thread {
-            val ablyEndpoint = try {
-                val config = JSONObject(URL("$base/api/config").readText())
-                if (config.isNull("ablyEndpoint")) null else config.getString("ablyEndpoint")
-            } catch (e: Exception) {
-                _state.update {
-                    it.copy(isActivating = false, statusMessage = null, errorMessage = "Couldn't load server config: ${e.message}")
-                }
-                return@thread
-            }
-            startActivation(base, ablyEndpoint)
+            startActivation(base)
         }
     }
 
-    private fun startActivation(base: String, ablyEndpoint: String?) {
+    private fun startActivation(base: String) {
         _state.update { it.copy(statusMessage = "Activating device…") }
         try {
             val options = ClientOptions().apply {
                 authUrl = "$base/api/auth"
                 authMethod = "GET"
-                // ably-android 1.8 predates the `endpoint` option, so map the
-                // server's ABLY_ENDPOINT onto the legacy options: a hostname
-                // becomes `restHost`, a name such as `sandbox` becomes `environment`.
-                when {
-                    ablyEndpoint == null -> Unit
-                    '.' in ablyEndpoint || ablyEndpoint == "localhost" -> restHost = ablyEndpoint
-                    else -> environment = ablyEndpoint
-                }
             }
             val rest = AblyRest(options)
             rest.setAndroidContext(context)
@@ -148,26 +133,52 @@ class AblyPushManager(context: Context) {
     }
 
     /**
-     * Subscribes this device to push on an Ably channel, so the server can
-     * target it by channel name. The channel's namespace must have push
-     * enabled in the Ably dashboard.
+     * Subscribes this device to an FCM topic via Ably's
+     * `POST /push/fcmTopics/{topic}/subscriptions/{deviceId}`. Ably resolves
+     * the device to its FCM registration token, so the app never handles FCM
+     * topics or credentials itself. ably-java has no wrapper for this endpoint
+     * yet, so it goes through `request()`, authenticated as the device by its
+     * identity token (no push-admin needed). Subscribing again is a no-op.
      */
-    fun subscribe(channelName: String) {
-        val name = channelName.trim()
+    fun subscribe(topic: String) {
+        val name = topic.trim()
         val rest = rest
         if (name.isEmpty() || rest == null) return
-        _state.update { it.copy(statusMessage = "Subscribing device to $name…") }
-        rest.channels.get(name).push.subscribeDeviceAsync(object : CompletionListener {
-            override fun onSuccess() {
-                _state.update {
-                    it.copy(subscribedChannel = name, errorMessage = null, statusMessage = "Subscribed to push on $name")
+        val device = rest.device()
+        _state.update { it.copy(statusMessage = "Subscribing device to topic $name…") }
+        rest.requestAsync(
+            "POST",
+            "/push/fcmTopics/${HttpUtils.encodeURIComponent(name)}/subscriptions/${HttpUtils.encodeURIComponent(device.id)}",
+            null,
+            // The endpoint takes no body, but ably-java rejects a POST without one.
+            HttpUtils.JsonRequestBody("{}"),
+            arrayOf(Param("X-Ably-DeviceToken", device.deviceIdentityToken)),
+            object : AsyncHttpPaginatedResponse.Callback {
+                override fun onResponse(response: AsyncHttpPaginatedResponse) {
+                    if (response.success) {
+                        _state.update {
+                            it.copy(subscribedTopic = name, errorMessage = null, statusMessage = "Subscribed to topic $name")
+                        }
+                    } else {
+                        onSubscribeFailed(ErrorInfo(response.errorMessage, response.statusCode, response.errorCode))
+                    }
                 }
-            }
 
-            override fun onError(reason: ErrorInfo?) {
-                _state.update { it.copy(errorMessage = "Channel subscribe failed: ${reason?.message}") }
-            }
-        })
+                override fun onError(reason: ErrorInfo?) = onSubscribeFailed(reason)
+            },
+        )
+    }
+
+    private fun onSubscribeFailed(reason: ErrorInfo?) {
+        if (reason?.code == ERROR_FCM_TOKEN_INVALID) {
+            // FCM rejected the device's registration token and Ably marked the
+            // registration failed; the device must activate again.
+            prefs.edit { putBoolean(KEY_ACTIVATED, false) }
+            rest = null
+            _state.value = State(errorMessage = "FCM token is no longer valid — activate the device again")
+            return
+        }
+        _state.update { it.copy(errorMessage = "Topic subscribe failed: ${reason?.message}") }
     }
 
     fun close() {
@@ -212,6 +223,9 @@ class AblyPushManager(context: Context) {
         const val PREFS = "ably_push"
         const val KEY_SERVER_URL = "server_url"
         const val KEY_ACTIVATED = "activated"
+
+        // FCM reported the registration token dead (UNREGISTERED, SENDER_ID_MISMATCH).
+        const val ERROR_FCM_TOKEN_INVALID = 103005
 
         const val ACTION_ACTIVATE = "io.ably.broadcast.PUSH_ACTIVATE"
         const val ACTION_DEACTIVATE = "io.ably.broadcast.PUSH_DEACTIVATE"

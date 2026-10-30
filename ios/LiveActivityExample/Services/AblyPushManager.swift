@@ -31,7 +31,7 @@ final class AblyPushManager: NSObject, ARTPushRegistererDelegate {
 
     // Activate the device with Ably, then register the push-to-start token.
     // `serverBaseURL` is the base of the dashboard server (its `/api/config`
-    // endpoint names the Ably environment, and its `/api/auth` endpoint mints
+    // endpoint names the Ably host, and its `/api/auth` endpoint mints
     // the Ably TokenRequest consumed via authUrl). `pushToStartToken` is the
     // hex string surfaced in the UI; it is converted back to the raw Data the
     // SDK expects.
@@ -61,25 +61,20 @@ final class AblyPushManager: NSObject, ARTPushRegistererDelegate {
                     self.errorMessage = "Couldn't load server config: \(error?.localizedDescription ?? "invalid response")"
                     return
                 }
-                self.startActivation(authUrl: authUrl, ablyEndpoint: config.ablyEndpoint, pushToStartToken: tokenData)
+                self.startActivation(authUrl: authUrl, ablyHost: config.ablyHost, pushToStartToken: tokenData)
             }
         }.resume()
     }
 
-    private func startActivation(authUrl: URL, ablyEndpoint: String?, pushToStartToken: Data) {
+    private func startActivation(authUrl: URL, ablyHost: String?, pushToStartToken: Data) {
         let options = ARTClientOptions()
         options.authUrl = authUrl
         options.authMethod = "GET"
         options.pushRegistererDelegate = self
-        // ably-cocoa 1.2 predates the `endpoint` option, so map the server's
-        // ABLY_ENDPOINT onto the legacy options: a hostname becomes `restHost`,
-        // a name such as `sandbox` becomes `environment`.
-        if let ablyEndpoint {
-            if ablyEndpoint.contains(".") || ablyEndpoint == "localhost" {
-                options.restHost = ablyEndpoint
-            } else {
-                options.environment = ablyEndpoint
-            }
+        // The server's Ably host for a non-production ABLY_ENDPOINT (ably-cocoa
+        // 1.2 predates the `endpoint` option); nil keeps the production default.
+        if let ablyHost {
+            options.restHost = ablyHost
         }
         let rest = ARTRest(options: options)
         self.rest = rest
@@ -199,7 +194,7 @@ final class AblyPushManager: NSObject, ARTPushRegistererDelegate {
 
 // Response of the server's `/api/config` endpoint.
 private struct ServerConfig: Decodable {
-    let ablyEndpoint: String?
+    let ablyHost: String?
 }
 
 private extension Data {

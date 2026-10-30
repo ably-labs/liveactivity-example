@@ -153,7 +153,7 @@ private fun PermissionsSection(resumeCount: Int) {
 private fun AblyPushSection(pushManager: AblyPushManager) {
     val state by pushManager.state.collectAsState()
     var serverUrl by rememberSaveable { mutableStateOf(pushManager.savedServerUrl ?: DEFAULT_SERVER_URL) }
-    var channel by rememberSaveable { mutableStateOf("games:lal-bos") }
+    var topic by rememberSaveable { mutableStateOf("games-lal-bos") }
 
     Section("Ably Push Activation") {
         Hint("Registers this device with Ably push (FCM) so the server can start and update the Live Update remotely. Authenticates against the server's authUrl token endpoint — no API key on the device.")
@@ -171,22 +171,22 @@ private fun AblyPushSection(pushManager: AblyPushManager) {
         if (state.isActivated) {
             StatusRow("Device", "Activated", true)
             CopyableValue("Ably Device ID", state.deviceId)
-            Hint("Subscribe this device to an Ably channel so the server can target it by channel name.")
+            Hint("Subscribe this device to an FCM topic through Ably, so one publish to the topic from the server reaches it.")
             Row(verticalAlignment = Alignment.CenterVertically) {
                 OutlinedTextField(
-                    channel,
-                    { channel = it },
+                    topic,
+                    { topic = it },
                     Modifier.weight(1f),
-                    label = { Text("Ably channel name") },
+                    label = { Text("FCM topic") },
                     singleLine = true,
                     textStyle = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
                 )
                 Spacer(Modifier.width(8.dp))
-                TextButton(onClick = { pushManager.subscribe(channel) }, enabled = channel.isNotBlank()) {
+                TextButton(onClick = { pushManager.subscribe(topic) }, enabled = topic.isNotBlank()) {
                     Text("Subscribe")
                 }
             }
-            state.subscribedChannel?.let { StatusRow("Subscribed", it, true) }
+            state.subscribedTopic?.let { StatusRow("Subscribed", it, true) }
             OutlinedButton(
                 onClick = { pushManager.deactivate() },
                 colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),

@@ -131,14 +131,10 @@
         <h2>Target Devices</h2>
         <span class="tag tag-green">FCM via Ably</span>
       </div>
-      <p class="hint">Android devices activate with Ably push (FCM) and subscribe to an Ably channel in the app. Target them by channel — one publish reaches every subscribed device — or by the <strong>Ably Device ID</strong> shown in the app. Provide at least one. Every event carries the full game state, so the teams are sent each time.</p>
+      <p class="hint">Android devices activate with Ably push (FCM) and subscribe themselves to an <strong>FCM topic</strong> in the app, through Ably. One publish to the topic reaches every subscribed device. Every event carries the full game state, so the teams are sent each time.</p>
       <div class="field">
-        <label for="and-channels">Ably Channel(s) <span class="tag">comma-separated</span></label>
-        <input type="text" id="and-channels" placeholder="e.g. games:lal-bos">
-      </div>
-      <div class="field">
-        <label for="and-device-id">Ably Device ID <span class="tag">optional</span></label>
-        <input type="text" id="and-device-id" placeholder="Paste the device ID from the app after activation">
+        <label for="and-topic">FCM Topic</label>
+        <input type="text" id="and-topic" value="games-lal-bos" placeholder="e.g. games-lal-bos">
       </div>
       <div class="row-2">
         <div class="field">
@@ -166,9 +162,9 @@
     <section class="card">
       <div class="card-header">
         <h2>Update / End</h2>
-        <span class="tag tag-green">Channel fan-out</span>
+        <span class="tag tag-green">Topic fan-out</span>
       </div>
-      <p class="hint">Push the new score to the target devices above. The Live Update and the widget update together; <strong>End Live Update</strong> shows the final score as a dismissable notification.</p>
+      <p class="hint">Push the new score to the devices subscribed to the topic above. The Live Update and the widget update together; <strong>End Live Update</strong> shows the final score as a dismissable notification.</p>
       <div class="row-3">
         <div class="field">
           <label for="and-home-score">Home Points</label>

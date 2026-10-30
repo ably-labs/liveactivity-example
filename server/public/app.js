@@ -110,21 +110,16 @@ document.getElementById('btn-end').addEventListener('click', () => {
 
 // --- Android Live Updates ---------------------------------------------------
 
-// Target devices + teams, shared by every Android event. Returns null (after
+// Target topic + teams, shared by every Android event. Returns null (after
 // logging why) when the target is incomplete.
 function androidTarget() {
-  const channels = document.getElementById('and-channels').value
-    .split(',')
-    .map((c) => c.trim())
-    .filter(Boolean);
-  const deviceId = document.getElementById('and-device-id').value.trim();
-  if (channels.length === 0 && !deviceId) {
-    log('Provide at least one Ably channel or a device ID', 'err');
+  const topic = document.getElementById('and-topic').value.trim();
+  if (!topic) {
+    log('Provide the FCM topic the devices subscribed to', 'err');
     return null;
   }
   return {
-    channels,
-    ...(deviceId ? { deviceId } : {}),
+    topic,
     homeTeam: document.getElementById('and-home').value.trim(),
     awayTeam: document.getElementById('and-away').value.trim(),
   };

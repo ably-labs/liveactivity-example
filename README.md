@@ -29,7 +29,7 @@ a data-only FCM push the app renders itself:
 
 | Flow | What happens | Requires |
 |---|---|----------|
-| **Remote start / update / end** | The server pushes the full game state to devices subscribed to an Ably channel (one publish, every device) or to one device ID; the app shows it as a Live Update and in the score widget | Android 8+ (Live Update promotion: Android 16+) |
+| **Remote start / update / end** | The server publishes the full game state to an FCM topic through Ably (one publish, every subscribed device); the app shows it as a Live Update and in the score widget | Android 8+ (Live Update promotion: Android 16+) |
 
 ## How it works
 
@@ -55,13 +55,20 @@ On Android there is no server-rendered UI like a Live Activity, so every
 event is a data-only push carrying the whole game state:
 
 ```
-┌────────────────┐  channel publish with  ┌────────┐   FCM    ┌──────────────────────┐
-│ Node dashboard │  extras.push, or push  │  Ably  │ ────────▶│ Android app           │
-│  Android tab   │ ──────────────────────▶│        │  data    │  FirebaseMessaging-   │
-│                │  admin publish to a    │ holds  │  message │  Service → Live Update│
-│  /api/auth ◀───┼─ device ID ────────────┼ FCM SA ┼──────────┤  notification+widget │
-└────────────────┘                        └────────┘          └──────────────────────┘
+┌────────────────┐  POST /push/fcmTopics/ ┌────────┐   FCM    ┌──────────────────────┐
+│ Node dashboard │  {topic}/messages      │  Ably  │ ────────▶│ Android app           │
+│  Android tab   │ ──────────────────────▶│        │  topic   │  FirebaseMessaging-   │
+│                │                        │ holds  │  fan-out │  Service → Live Update│
+│  /api/auth ◀───┼────────────────────────┼ FCM SA ┼──────────┤  notification+widget │
+└────────────────┘   token auth (authUrl) └────────┘          └──────────────────────┘
 ```
+
+The app subscribes itself to the topic through Ably
+(`POST /push/fcmTopics/{topic}/subscriptions/{deviceId}`); Ably maps the
+device to its FCM registration token, so neither the app nor the server
+handles FCM tokens or credentials. Neither SDK wraps the FCM topic API yet,
+so both sides call it with `request()`. It's currently live on the **sandbox**
+cluster only — see `ABLY_ENDPOINT` in Step 2.
 
 ## What's in the repo
 
@@ -79,7 +86,7 @@ android/                            Android app (Gradle project, Kotlin + Compos
     model/GameState.kt                GameState — the FCM data wire contract
     model/GameStore.kt                Persisted latest game (read by the widget)
     LiveGame.kt                       Applies start/update/end to notification + widget
-    push/AblyPushManager.kt           Ably device activation (FCM) + channel subscribe
+    push/AblyPushManager.kt           Ably device activation (FCM) + topic subscribe
     push/LiveUpdateMessagingService.kt  FCM receiver: token refresh + incoming pushes
     notification/LiveUpdateNotifier.kt  The Live Update (promoted ongoing notification)
     widget/GameScoreWidgetProvider.kt   Home-screen score widget (RemoteViews)
@@ -88,7 +95,7 @@ android/                            Android app (Gradle project, Kotlin + Compos
 server/                             Node.js dashboard
   server.js                           Express API + Ably token auth endpoint
   ably-live-activity.js               iOS: Ably push admin client (broadcast + live activity)
-  ably-live-update.js                 Android: data-only FCM pushes via Ably
+  ably-live-update.js                 Android: data-only FCM topic pushes via Ably
   public/                             Web dashboard (HTML/CSS/JS)
 ```
 
@@ -120,11 +127,7 @@ on Android.
    name `com.ably.example.liveupdate`, then under Project settings → Service
    accounts generate a private key (JSON) and upload it in the Ably app's
    **Push** settings (FCM section).
-4. For Android channel targeting: under the Ably app's **Settings → Rules**,
-   add a channel rule for the `games` namespace with **Push notifications
-   enabled**. Publishes with a push payload are rejected on other channels
-   ("Published push notification to not push-enabled channel").
-5. Create an API key with the **Push Admin** and **Publish** capabilities.
+4. Create an API key with the **Push Admin** and **Publish** capabilities.
 
 That's the only place your Apple and Firebase credentials live — the server
 never sees them.
@@ -145,10 +148,12 @@ capability from Step 1 (Ably dashboard → your app → API Keys). Set `PORT` to
 change the dashboard port (default 3000).
 
 To run against a non-production Ably environment, set `ABLY_ENDPOINT` (e.g.
-`sandbox`, or a hostname) and use an API key from an app in that environment.
-The server passes it to ably-js as the `endpoint` client option, and the iOS
-and Android apps read it from the server's `/api/config` before creating their
-Ably client, so all three talk to the same environment.
+`nonprod:sandbox` for the sandbox cluster, or a hostname) and use an API key
+from an app in that environment. The server passes it to ably-js as the
+`endpoint` client option, and the iOS and Android apps read the resolved host
+from the server's `/api/config` before creating their Ably client, so all three
+talk to the same environment. Note that plain `sandbox` resolves to
+`sandbox.realtime.ably.net`, which doesn't exist.
 
 ## Step 3 — Build the iOS app
 
@@ -264,18 +269,18 @@ as a Live Update notification and in the home-screen widget.
    tap **Activate Device with Ably**. `push.activate()` fetches an FCM
    registration token and registers the device with Ably; the **Ably Device
    ID** then appears in the app.
-2. Subscribe the device to an Ably channel, e.g. `games:lal-bos` (the
-   namespace needs the push rule from Step 1).
+2. Subscribe the device to an FCM topic, e.g. `games-lal-bos` (FCM topic
+   names allow only letters, digits and `-_.~%`).
 3. Optionally tap **Add Widget to Home Screen** to pin the Game Score widget.
 
 **From the dashboard (Android Live Update tab):**
 
-4. Enter the channel from step 2 and/or paste the Device ID, set the teams,
+4. Enter the topic from step 2, set the teams,
    and click **Start Live Update**. The Live Update appears — even with the
    app in the background — and the widget shows the game.
 5. Change the points, status, period, clock or last play and click **Send
    Update**: the notification's score chip, the expanded notification and the
-   widget all update together. Subscribe more devices to the same channel to
+   widget all update together. Subscribe more devices to the same topic to
    see one publish reach all of them.
 6. **End Live Update** turns the notification into a dismissable final score
    (cleared after an hour) and the widget shows *FINAL*.
@@ -319,11 +324,11 @@ caches the last update so late-joining devices receive the current
 content-state when they subscribe.
 
 For Android, every event is a data-only push with the full game state (FCM
-data values must be strings). Channel targeting is a normal channel publish
-with a push payload in `extras`; device targeting uses push admin publish:
+data values must be strings), published to an FCM topic. ably-js has no
+wrapper for the FCM topic API yet, so it goes through `request()`:
 
 ```js
-const push = {
+const body = {
   data: {
     event: 'update',                    // 'start' | 'update' | 'end'
     homeTeam: 'Lakers', awayTeam: 'Celtics',
@@ -331,13 +336,25 @@ const push = {
     gameStatus: 'live', period: 'Q4', clock: '1:12', lastPlay: 'James dunk',
     timestamp: String(Date.now()),      // lets the app drop out-of-order pushes
   },
-  fcm: { priority: 'HIGH' },            // merged into the FCM AndroidConfig
+  android: { priority: 'high' },       // FCM v1 AndroidConfig, passed as-is
 };
 
-// Every device subscribed to the channel (needs a push-enabled channel rule)
-await rest.channels.get('games:lal-bos').publish({ name: 'live-update', extras: { push } });
-// One device
-await rest.push.admin.publish({ deviceId }, push);
+// Every device subscribed to the topic. request() doesn't throw on HTTP
+// errors, so check res.success / res.errorMessage.
+const res = await rest.request('POST', '/push/fcmTopics/games-lal-bos/messages', 6, null, body);
+// res.items[0] → { topic, messageId }
+```
+
+The app subscribes itself with ably-java's `request()`, authenticated as the
+device by its identity token (no push-admin capability needed):
+
+```kotlin
+val device = rest.device()
+rest.requestAsync(
+    "POST", "/push/fcmTopics/games-lal-bos/subscriptions/${device.id}",
+    null, HttpUtils.JsonRequestBody("{}"),  // no body needed, but ably-java requires one on POST
+    arrayOf(Param("X-Ably-DeviceToken", device.deviceIdentityToken)), callback,
+)
 ```
 
 There is no `notification` block, so FCM always delivers the message to the
@@ -372,9 +389,13 @@ app.get('/api/auth', async (req, res) => {
 - **Android: activation fails or never completes** — `app/google-services.json`
   must belong to the Firebase project whose service account is uploaded to
   Ably, and the device or emulator needs Google Play services.
-- **Android: "Published push notification to not push-enabled channel"** —
-  add the push-enabled channel rule for the namespace (Step 1), or target the
-  device by ID instead.
+- **Android: topic calls fail with 103006 or 40183** — the Ably app has no FCM
+  service account (or only a legacy server key); upload the service account
+  JSON in the Push settings (Step 1).
+- **Android: topic calls return 404** — the FCM topic API is only on the
+  sandbox cluster for now; set `ABLY_ENDPOINT=nonprod:sandbox`.
+- **Android: "FCM token is no longer valid"** (103005) — FCM rejected the
+  device's registration token and Ably marked it failed; activate again.
 - **Android: the notification isn't promoted to a Live Update** — needs
   Android 16+, and Live Updates must be allowed for the app (the app's
   *Notifications* card shows the state and links to the setting).
